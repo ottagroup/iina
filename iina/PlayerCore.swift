@@ -1734,7 +1734,7 @@ class PlayerCore: NSObject {
   }
 
   func generateThumbnails() {
-    Logger.log("Getting thumbnails", subsystem: subsystem)
+    Logger.log("Reloading thumbnails", subsystem: subsystem)
     info.thumbnailsReady = false
     info.thumbnails.removeAll(keepingCapacity: true)
     info.thumbnailsProgress = 0
@@ -1753,24 +1753,62 @@ class PlayerCore: NSObject {
         return
       }
     }
-    if Preference.bool(for: .enableThumbnailPreview) {
-      if let cacheName = info.mpvMd5, ThumbnailCache.fileIsCached(forName: cacheName, forVideo: info.currentURL) {
-        Logger.log("Found thumbnail cache", subsystem: subsystem)
-        thumbnailQueue.async {
-          if let thumbnails = ThumbnailCache.read(forName: cacheName) {
-            self.info.thumbnails = thumbnails
-            self.info.thumbnailsReady = true
-            self.info.thumbnailsProgress = 1
-            self.refreshTouchBarSlider()
-          } else {
-            Logger.log("Cannot read thumbnail from cache", level: .error, subsystem: self.subsystem)
-          }
+    guard Preference.bool(for: .enableThumbnailPreview) else {
+      Logger.log("...stopped because thumbnails are disabled by user pref", subsystem: subsystem)
+      return
+    }
+
+    let requestedLength = Preference.integer(for: .thumbnailLength)
+    guard let thumbWidth = determineWidthOfThumbnail(from: requestedLength) else { return }
+    info.thumbnailLength = requestedLength
+    info.thumbnailWidth = thumbWidth
+
+    if let cacheName = info.mpvMd5, ThumbnailCache.fileIsCached(forName: cacheName, forVideo: info.currentURL, forWidth: thumbWidth) {
+      Logger.log("Found thumbnail cache named \(cacheName.quoted), width: \(thumbWidth)px", subsystem: subsystem)
+      thumbnailQueue.async {
+        if let thumbnails = ThumbnailCache.read(forName: cacheName, forWidth: thumbWidth) {
+          self.info.thumbnails = thumbnails
+          self.info.thumbnailsReady = true
+          self.info.thumbnailsProgress = 1
+          self.refreshTouchBarSlider()
+        } else {
+          Logger.log("Cannot read thumbnail from cache \(cacheName.quoted), width \(thumbWidth)px", level: .error, subsystem: self.subsystem)
         }
+      }
+    } else {
+      Logger.log("Generating new thumbnails, width=\(thumbWidth)", subsystem: subsystem)
+      ffmpegController.generateThumbnail(forFile: url.path, thumbWidth:Int32(thumbWidth))
+    }
+  }
+
+  /** We want the requested size of thumbnail to correspond to whichever video dimension is longer.
+   Example: if video's native size is 600 W x 800 H and requested thumbnail size is 100, then `thumbWidth` should be 75. */
+  private func determineWidthOfThumbnail(from requestedLength: Int) -> Int? {
+    guard let videoHeight = info.videoHeight, let videoWidth = info.videoWidth, videoHeight > 0, videoWidth > 0 else {
+      Logger.log("Failed to generate thumbnails: video height and/or width not present in playback info", level: .error, subsystem: subsystem)
+      return nil
+    }
+    let thumbWidth: Int
+    if videoHeight > videoWidth {
+      // Match requested size to video height
+      if requestedLength > videoHeight {
+        // Do not go bigger than video's native width
+        thumbWidth = videoWidth
+        Logger.log("Video's height is longer than its width, and thumbLength (\(requestedLength)) is larger than video's native height (\(videoHeight)); clamping thumbWidth to \(videoWidth)", subsystem: subsystem)
       } else {
-        Logger.log("Request new thumbnails", subsystem: subsystem)
-        ffmpegController.generateThumbnail(forFile: url.path, thumbWidth:Int32(Preference.integer(for: .thumbnailWidth)))
+        thumbWidth = Int(Float(requestedLength) * (Float(videoWidth) / Float(videoHeight)))
+        Logger.log("Video's height (\(videoHeight)) is longer than its width (\(videoWidth)); scaling down thumbWidth to \(thumbWidth)", subsystem: subsystem)
+      }
+    } else {
+      // Match requested size to video width
+      if requestedLength > videoWidth {
+        Logger.log("Requested thumblLength (\(requestedLength)) is larger than video's native width; clamping thumbWidth to \(videoWidth)", subsystem: subsystem)
+        thumbWidth = videoWidth
+      } else {
+        thumbWidth = requestedLength
       }
     }
+    return thumbWidth
   }
 
   func refreshTouchBarSlider() {
@@ -2033,19 +2071,28 @@ class PlayerCore: NSObject {
 
 extension PlayerCore: FFmpegControllerDelegate {
 
-  func didUpdate(_ thumbnails: [FFThumbnail]?, forFile filename: String, withProgress progress: Int) {
-    guard let currentFilePath = info.currentURL?.path, currentFilePath == filename else { return }
-    Logger.log("Got new thumbnails, progress \(progress)", subsystem: subsystem)
+  func didUpdate(_ thumbnails: [FFThumbnail]?, forFile filename: String, thumbWidth width: Int32, withProgress progress: Int) {
+    guard let currentFilePath = info.currentURL?.path, currentFilePath == filename, width == info.thumbnailWidth else {
+      Logger.log("Thumbs update [\(width)px] discarding; progress \(progress)): either sourcePath or thumbWidth does not match expected",
+                 level: .error, subsystem: subsystem)
+      return
+    }
+    let targetCount = ffmpegController.thumbnailCount
     if let thumbnails = thumbnails {
       info.thumbnails.append(contentsOf: thumbnails)
     }
-    info.thumbnailsProgress = Double(progress) / Double(ffmpegController.thumbnailCount)
+    info.thumbnailsProgress = Double(progress) / Double(targetCount)
+    Logger.log("Thumbs update: \(thumbnails?.count ?? 0) more added [\(width)px, \(round(info.thumbnailsProgress * 100))% done, \(info.thumbnails.count) total]", subsystem: subsystem)
     refreshTouchBarSlider()
   }
 
-  func didGenerate(_ thumbnails: [FFThumbnail], forFile filename: String, succeeded: Bool) {
-    guard let currentFilePath = info.currentURL?.path, currentFilePath == filename else { return }
-    Logger.log("Got all thumbnails, succeeded=\(succeeded)", subsystem: subsystem)
+  func didGenerate(_ thumbnails: [FFThumbnail], forFile filename: String, thumbWidth width: Int32, succeeded: Bool) {
+    guard let currentFilePath = info.currentURL?.path, currentFilePath == filename, width == info.thumbnailWidth else {
+      Logger.log("Ignoring generated thumbnails (\(width)px width): either filePath or thumbWidth does not match expected",
+                 level: .error, subsystem: subsystem)
+      return
+    }
+    Logger.log("Thumbs done [\(width)px] Status: \(succeeded ? "OK" : "Failed"). Total: \(thumbnails.count)", subsystem: subsystem)
     if succeeded {
       info.thumbnails = thumbnails
       info.thumbnailsReady = true
@@ -2053,7 +2100,7 @@ extension PlayerCore: FFmpegControllerDelegate {
       refreshTouchBarSlider()
       if let cacheName = info.mpvMd5 {
         backgroundQueue.async {
-          ThumbnailCache.write(self.info.thumbnails, forName: cacheName, forVideo: self.info.currentURL)
+          ThumbnailCache.write(self.info.thumbnails, forName: cacheName, forVideo: self.info.currentURL, forWidth: Int(width))
         }
       }
       events.emit(.thumbnailsReady)
