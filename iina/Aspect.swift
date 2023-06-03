@@ -11,7 +11,7 @@ import Cocoa
 class Aspect: NSObject {
 
   private var size: NSSize!
-
+  
   var width: CGFloat {
     get {
       return size.width
@@ -20,7 +20,7 @@ class Aspect: NSObject {
       size.width = newValue
     }
   }
-
+  
   var height: CGFloat {
     get {
       return size.height
@@ -38,10 +38,6 @@ class Aspect: NSObject {
 
   init(size: NSSize) {
     self.size = size
-  }
-
-  init(width: CGFloat, height: CGFloat) {
-    self.size = NSMakeSize(width, height)
   }
 
   init?(string: String) {

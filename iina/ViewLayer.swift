@@ -195,7 +195,7 @@ class ViewLayer: CAOpenGLLayer {
   }
 
   // MARK: Utils
-
+  
   /** Check OpenGL error (for debug only). */
   func gle() {
     let e = glGetError()
