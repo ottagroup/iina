@@ -936,10 +936,7 @@ not applying FFmpeg 9599 workaround
         recordedSeekStartTime = CACurrentMediaTime()
       }
       player.syncUI(.time)
-      let osdText = (player.info.videoPosition?.stringRepresentation ?? Constants.String.videoTimePlaceholder) + " / " +
-        (player.info.videoDuration?.stringRepresentation ?? Constants.String.videoTimePlaceholder)
-      let percentage = (player.info.videoPosition / player.info.videoDuration) ?? 1
-      player.sendOSD(.seek(osdText, percentage))
+      player.sendOSD(.seek(player.info.videoPosition?.second, player.info.videoDuration?.second))
 
     case MPV_EVENT_PLAYBACK_RESTART:
       player.info.isIdle = false

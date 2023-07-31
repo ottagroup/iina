@@ -33,7 +33,7 @@ enum OSDMessage {
 
   case pause
   case resume
-  case seek(String, Double)  // text, percentage
+  case seek(Double?, Double?)  /// `player.info.videoPosition?.second`, `player.info.videoDuration?.second`
   case volume(Int)
   case speed(Double)
   case aspect(String)
@@ -93,8 +93,22 @@ enum OSDMessage {
     case .resume:
       return (NSLocalizedString("osd.resume", comment: "Resume"), .withText("{{position}} / {{duration}}"))
 
-    case .seek(let text, let percent):
-      return (text, .withProgress(percent))
+    case .seek(let positionSecond, let durationSecond):
+      let posStr: String
+      if let positionSecond = positionSecond {
+        posStr = VideoTime(positionSecond).stringRepresentation
+      } else {
+        posStr = Constants.String.videoTimePlaceholder
+      }
+      let durStr: String
+      if let durationSecond = durationSecond {
+        durStr = VideoTime(durationSecond).stringRepresentation
+      } else {
+        durStr = Constants.String.videoTimePlaceholder
+      }
+      let text = "\(posStr)/\(durStr)"
+      let percentage = positionSecond == nil || durationSecond == nil ? 1 : (positionSecond! / durationSecond!)
+      return (text, .withProgress(percentage))
 
     case .volume(let value):
       return (
