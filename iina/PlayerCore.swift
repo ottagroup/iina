@@ -653,7 +653,7 @@ class PlayerCore: NSObject {
 
   func resume() {
     // Restart playback when reached EOF
-    if mpv.getFlag(MPVProperty.eofReached) {
+    if Preference.bool(for: .resumeFromEndRestartsPlayback) && mpv.getFlag(MPVProperty.eofReached) {
       seek(absoluteSecond: 0)
     }
     mpv.setFlag(MPVOption.PlaybackControl.pause, false)
@@ -1808,7 +1808,9 @@ class PlayerCore: NSObject {
         info.videoPosition?.second = duration
       }
       info.constrainVideoPosition()
-      DispatchQueue.main.async {
+      DispatchQueue.main.async { [self] in
+        // don't let play/pause icon fall out of sync
+        mainWindow.playButton.state = info.isPaused ? .off : .on
         if self.isInMiniPlayer {
           self.miniPlayer.updatePlayTime(withDuration: self.info.isNetworkResource, andProgressBar: true)
         } else {
@@ -1833,8 +1835,10 @@ class PlayerCore: NSObject {
       info.cacheSpeed = mpv.getInt(MPVProperty.cacheSpeed)
       info.cacheTime = mpv.getInt(MPVProperty.demuxerCacheTime)
       info.bufferingState = mpv.getInt(MPVProperty.cacheBufferingState)
-      DispatchQueue.main.async {
+      DispatchQueue.main.async { [self] in
         if self.isInMiniPlayer {
+          // don't let play/pause icon fall out of sync
+          mainWindow.playButton.state = info.isPaused ? .off : .on
           self.miniPlayer.updatePlayTime(withDuration: true, andProgressBar: true)
         } else {
           self.mainWindow.updatePlayTime(withDuration: true, andProgressBar: true)
