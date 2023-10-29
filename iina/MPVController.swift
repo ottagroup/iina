@@ -126,6 +126,8 @@ class MPVController: NSObject {
     MPVOption.Audio.volume: MPV_FORMAT_DOUBLE,
     MPVOption.Audio.audioDelay: MPV_FORMAT_DOUBLE,
     MPVOption.PlaybackControl.speed: MPV_FORMAT_DOUBLE,
+    MPVOption.Subtitles.subVisibility: MPV_FORMAT_FLAG,
+    MPVOption.Subtitles.secondarySubVisibility: MPV_FORMAT_FLAG,
     MPVOption.Subtitles.subDelay: MPV_FORMAT_DOUBLE,
     MPVOption.Subtitles.subScale: MPV_FORMAT_DOUBLE,
     MPVOption.Subtitles.subPos: MPV_FORMAT_DOUBLE,
@@ -456,6 +458,21 @@ not applying FFmpeg 9599 workaround
     chkErr(mpv_set_property_string(mpv, MPVOption.Video.vo, "libmpv"))
     chkErr(mpv_set_property_string(mpv, MPVOption.Window.keepaspect, "no"))
     chkErr(mpv_set_property_string(mpv, MPVOption.Video.gpuHwdecInterop, "auto"))
+
+    // The option watch-later-options is not available until after the mpv instance is initialized.
+    // In mpv 0.34.1 the default value for the watch-later-options property contains the option
+    // sub-visibility, but the option secondary-sub-visibility is missing. This inconsistency is
+    // likely to confuse users, so insure the visibility setting for secondary subtitles is also
+    // saved in watch later files.
+    if  let watchLaterOptions = getString(MPVOption.WatchLater.watchLaterOptions),
+        watchLaterOptions.contains(MPVOption.Subtitles.subVisibility),
+        !watchLaterOptions.contains(MPVOption.Subtitles.secondarySubVisibility) {
+      setString(MPVOption.WatchLater.watchLaterOptions, watchLaterOptions + "," +
+                MPVOption.Subtitles.secondarySubVisibility)
+    }
+    if let watchLaterOptions = getString(MPVOption.WatchLater.watchLaterOptions) {
+      Logger.log("Options mpv is configured to save in watch later files: \(watchLaterOptions)")
+    }
 
     // get version
     mpvVersion = getString(MPVProperty.mpvVersion)
@@ -1161,6 +1178,20 @@ not applying FFmpeg 9599 workaround
       if let data = UnsafePointer<Double>(OpaquePointer(property.data))?.pointee {
         player.info.audioDelay = data
         player.sendOSD(.audioDelay(data))
+      }
+
+    case MPVOption.Subtitles.subVisibility:
+      if let visible = UnsafePointer<Bool>(OpaquePointer(property.data))?.pointee {
+        DispatchQueue.main.async {
+          self.player.subVisibilityChanged(visible)
+        }
+      }
+
+    case MPVOption.Subtitles.secondarySubVisibility:
+      if let visible = UnsafePointer<Bool>(OpaquePointer(property.data))?.pointee {
+        DispatchQueue.main.async {
+          self.player.secondSubVisibilityChanged(visible)
+        }
       }
 
     case MPVOption.Subtitles.subDelay:
