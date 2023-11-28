@@ -293,6 +293,8 @@ struct Preference {
     static let suppressCannotPreventDisplaySleep = Key("suppressCannotPreventDisplaySleep")
 
     static let iinaEnablePluginSystem = Key("iinaEnablePluginSystem")
+    /// true if NSArchiver color data was migrated from data to string. See: `LegacyMigration`.
+    static let didMigrateColorFromNSArchiver = Key("didMigrateColorFromNSArchiver")
   }
 
   // MARK: - Enums
@@ -840,6 +842,7 @@ struct Preference {
     .useUserDefinedConfDir: false,
     .userDefinedConfDir: "~/.config/mpv/",
     .iinaEnablePluginSystem: false,
+    .didMigrateColorFromNSArchiver: false,
 
     .keepOpenOnFileEnd: true,
     .quitWhenNoOpenedWindow: false,
