@@ -10,7 +10,9 @@ import Foundation
 
 class LegacyMigration {
 
-  // Map of [modern pref key → legacy key]. Do not reference legacy keys outside this file.
+  /// Map of [modern pref key → legacy key].
+  ///
+  /// - Important: Do not reference legacy keys outside this file.
   fileprivate static let legacyColorPrefKeyMap: [Preference.Key: Preference.Key] = [
     Preference.Key.subTextColorString: Preference.Key("subTextColor"),
     Preference.Key.subBgColorString: Preference.Key("subBgColor"),
@@ -50,14 +52,14 @@ class LegacyMigration {
     var entriesMigratedCount: Int = 0
     for (modernKey, legacyKey) in legacyColorPrefKeyMap {
       // Look for legacy pref:
-      guard let data = UserDefaults.standard.data(forKey: legacyKey.rawValue) else { continue }
+      guard let data = Preference.data(for: legacyKey) else { continue }
       entriesFoundCount += 1
 
       // To be super safe, check the value for the modern pref key.
       // A pref which has not been set looks identical to the default value.
       let defaultValue = Preference.defaultPreference[modernKey] as? String
-      let currentValue = Preference.value(for: modernKey) as? String
-      guard currentValue == nil || currentValue == defaultValue else {
+      let currentValue = Preference.string(for: modernKey)
+      guard currentValue == defaultValue else {
         Logger.log("Found non-default value for key \(modernKey.rawValue); will not overwrite with legacy data", level: .warning)
         continue
       }
@@ -65,10 +67,10 @@ class LegacyMigration {
       guard let color = NSUnarchiver.unarchiveObject(with: data) as? NSColor,
             let mpvColorString = color.usingColorSpace(.deviceRGB)?.mpvColorString else {
         Logger.log("Failed to convert color value from legacy key \(legacyKey.rawValue)", level: .error)
-        return  // Data error == fail migration
+        continue
       }
       // Store migrated value in modern string format under modern pref key:
-      UserDefaults.standard.set(mpvColorString, forKey: modernKey.rawValue)
+      Preference.set(mpvColorString, for: modernKey)
       Logger.log("Converted color value from legacy key \(legacyKey.rawValue) and stored in key \(modernKey.rawValue)")
       entriesMigratedCount += 1
     }

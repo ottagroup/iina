@@ -2020,6 +2020,7 @@
 				E3513AFA20F120F600F8C347 /* PreferenceViewController.swift */,
 				E374160B20F138A900B4F7F9 /* CollapseView.swift */,
 				519872FE26879B9B00F84BCC /* AccessibilityPreferences.swift */,
+				D1A4D9892B1495270009AB4E /* LegacyMigration.swift */,
 			);
 			name = Preference;
 			sourceTree = "<group>";
@@ -2229,7 +2230,6 @@
 				E39A11FC240F176E00A67F9F /* StringEncodingName.swift */,
 				51C1BA39291CA76700C1208A /* InfoDictionary.swift */,
 				51DE55C82A6646710050AD06 /* Sysctl.swift */,
-				D1A4D9892B1495270009AB4E /* LegacyMigration.swift */,
 			);
 			name = Utils;
 			sourceTree = "<group>";
