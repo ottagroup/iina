@@ -263,6 +263,8 @@ class MainWindowController: PlayerWindowController {
   var osdAnimationState: UIAnimationState = .hidden
   var sidebarAnimationState: UIAnimationState = .hidden
 
+  private var osdLastMessage: OSDMessage? = nil
+
   // Sidebar
 
   /** Type of the view embedded in sidebar. */
@@ -1774,6 +1776,12 @@ class MainWindowController: PlayerWindowController {
 
   // MARK: - UI: Show / Hide
 
+  func isUITimerNeeded() -> Bool {
+    let showingFadeableViews = animationState == .shown || animationState == .willShow
+    let showingOSD = osdAnimationState == .shown || osdAnimationState == .willShow
+    return showingFadeableViews || showingOSD
+  }
+
   @objc func hideUIAndCursor() {
     // don't hide UI when dragging control bar
     if controlBarFloating.isDragging { return }
@@ -1787,22 +1795,8 @@ class MainWindowController: PlayerWindowController {
       return
     }
 
-    // Follow energy efficiency best practices and stop the timer that updates the OSC while it is
-    // hidden. However the timer can't be stopped if the mini player is being used as it always
-    // displays the the OSC or the timer is also updating the information being displayed in the
-    // touch bar. Does this host have a touch bar? Is the touch bar configured to show app controls?
-    // Is the touch bar awake? Is the host being operated in closed clamshell mode? This is the kind
-    // of information needed to avoid running the timer and updating controls that are not visible.
-    // Unfortunately in the documentation for NSTouchBar Apple indicates "There’s no need, and no
-    // API, for your app to know whether or not there’s a Touch Bar available". So this code keys
-    // off whether AppKit has requested that a NSTouchBar object be created. This avoids running the
-    // timer on Macs that do not have a touch bar. It also may avoid running the timer when a
-    // MacBook with a touch bar is being operated in closed clameshell mode.
-    if !player.isInMiniPlayer && !player.needsTouchBar {
-      player.invalidateTimer()
-    }
-
     animationState = .willHide
+    player.refreshSyncUITimer()
     fadeableViews.forEach { (v) in
       v.isHidden = false
     }
@@ -1837,10 +1831,7 @@ class MainWindowController: PlayerWindowController {
     }
     // The OSC may not have been updated while it was hidden to avoid wasting energy. Make sure it
     // is up to date.
-    player.syncUITime()
-    if !player.info.isPaused {
-      player.createSyncUITimer()
-    }
+    player.refreshSyncUITimer()
     standardWindowButtons.forEach { $0.isEnabled = true }
     NSAnimationContext.runAnimationGroup({ (context) in
       context.duration = UIAnimationDuration
@@ -1921,21 +1912,10 @@ class MainWindowController: PlayerWindowController {
 
   // MARK: - UI: OSD
 
-  // Do not call displayOSD directly, call PlayerCore.sendOSD instead.
-  func displayOSD(_ message: OSDMessage, autoHide: Bool = true, forcedTimeout: Float? = nil, accessoryView: NSView? = nil, context: Any? = nil) {
-    guard player.displayOSD && !isShowingPersistentOSD else { return }
-
-    if hideOSDTimer != nil {
-      hideOSDTimer!.invalidate()
-      hideOSDTimer = nil
-    }
-    osdAnimationState = .shown
+  private func setOSDViews(fromMessage message: OSDMessage) {
+    osdLastMessage = message
 
     let (osdString, osdType) = message.message()
-
-    let osdTextSize = Preference.float(for: .osdTextSize)
-    osdLabel.font = NSFont.monospacedDigitSystemFont(ofSize: CGFloat(osdTextSize), weight: .regular)
-    osdAccessoryText.font = NSFont.monospacedDigitSystemFont(ofSize: CGFloat(osdTextSize * 0.5).clamped(to: 11...25), weight: .regular)
     osdLabel.stringValue = osdString
 
     switch osdType {
@@ -1947,6 +1927,9 @@ class MainWindowController: PlayerWindowController {
       osdStackView.setVisibilityPriority(.mustHold, for: osdAccessoryProgress)
       osdAccessoryProgress.doubleValue = value
     case .withText(let text):
+      osdStackView.setVisibilityPriority(.mustHold, for: osdAccessoryText)
+      osdStackView.setVisibilityPriority(.notVisible, for: osdAccessoryProgress)
+
       // data for mustache redering
       let osdData: [String: String] = [
         "duration": player.info.videoDuration?.stringRepresentation ?? Constants.String.videoTimePlaceholder,
@@ -1954,11 +1937,30 @@ class MainWindowController: PlayerWindowController {
         "currChapter": (player.mpv.getInt(MPVProperty.chapter) + 1).description,
         "chapterCount": player.info.chapters.count.description
       ]
-
-      osdStackView.setVisibilityPriority(.mustHold, for: osdAccessoryText)
-      osdStackView.setVisibilityPriority(.notVisible, for: osdAccessoryProgress)
       osdAccessoryText.stringValue = try! (try! Template(string: text)).render(osdData)
     }
+  }
+
+  // Do not call displayOSD directly, call PlayerCore.sendOSD instead.
+  func displayOSD(_ message: OSDMessage, autoHide: Bool = true, forcedTimeout: Float? = nil, accessoryView: NSView? = nil, context: Any? = nil) {
+    guard player.displayOSD && !isShowingPersistentOSD else { return }
+
+    if hideOSDTimer != nil {
+      hideOSDTimer!.invalidate()
+      hideOSDTimer = nil
+    }
+    if osdAnimationState != .shown {
+      osdAnimationState = .shown  /// set this before calling `refreshSyncUITimer()`
+      player.refreshSyncUITimer()
+    } else {
+      osdAnimationState = .shown
+    }
+
+    let osdTextSize = Preference.float(for: .osdTextSize)
+    osdLabel.font = NSFont.monospacedDigitSystemFont(ofSize: CGFloat(osdTextSize), weight: .regular)
+    osdAccessoryText.font = NSFont.monospacedDigitSystemFont(ofSize: CGFloat(osdTextSize * 0.5).clamped(to: 11...25), weight: .regular)
+
+    setOSDViews(fromMessage: message)
 
     osdVisualEffectView.alphaValue = 1
     osdVisualEffectView.isHidden = false
@@ -2023,6 +2025,7 @@ class MainWindowController: PlayerWindowController {
     }
     isShowingPersistentOSD = false
     osdContext = nil
+    player.refreshSyncUITimer()
   }
 
   func updateAdditionalInfo() {
@@ -2598,6 +2601,24 @@ class MainWindowController: PlayerWindowController {
   }
 
   // MARK: - Sync UI with playback
+
+  override func updatePlayTime(withDuration duration: Bool, andProgressBar: Bool) {
+    super.updatePlayTime(withDuration: duration, andProgressBar: andProgressBar)
+
+    if osdAnimationState == .shown, let osdLastMessage = self.osdLastMessage {
+      let message: OSDMessage
+      switch osdLastMessage {
+      case .pause, .resume:
+        message = osdLastMessage
+      case .seek(_, _):
+        message = .seek(player.info.videoPosition?.second, player.info.videoDuration?.second)
+      default:
+        return
+      }
+
+      setOSDViews(fromMessage: message)
+    }
+  }
 
   override func updatePlayButtonState(_ state: NSControl.StateValue) {
     super.updatePlayButtonState(state)
