@@ -40,42 +40,33 @@ class LegacyMigration {
    for these keys.
    */
   static func migrateLegacyPreferences() {
-    let didMigrateColor = Preference.bool(for: .didMigrateColorFromNSArchiver)
-    guard !didMigrateColor else {
-      Logger.log("Already migrated color prefs away from NSArchiver; no migration needed", level: .verbose)
-      return
-    }
+    Logger.log("Looking for legacy color prefs to migrate", level: .verbose)
 
-    Logger.log("Looking for legacy color pref entries to migrate")
-
-    var entriesFoundCount: Int = 0
+    var unmigratedEntriesFoundCount: Int = 0
     var entriesMigratedCount: Int = 0
     for (modernKey, legacyKey) in legacyColorPrefKeyMap {
-      // Look for legacy pref:
-      guard let data = Preference.data(for: legacyKey) else { continue }
-      entriesFoundCount += 1
+      // Migrate pref only if there is a legacy entry with but no corresponding modern entry
+      guard Preference.keyHasBeenPersisted(legacyKey),
+            !Preference.keyHasBeenPersisted(modernKey) else { continue }
+      unmigratedEntriesFoundCount += 1
 
-      // To be super safe, check the value for the modern pref key.
-      // A pref which has not been set looks identical to the default value.
-      let defaultValue = Preference.defaultPreference[modernKey] as? String
-      let currentValue = Preference.string(for: modernKey)
-      guard currentValue == defaultValue else {
-        Logger.log("Found non-default value for key \(modernKey.rawValue); will not overwrite with legacy data", level: .warning)
-        continue
-      }
-
-      guard let color = NSUnarchiver.unarchiveObject(with: data) as? NSColor,
+      // Deserialize & convert legacy pref value to modern string format:
+      guard let legacyData = Preference.data(for: legacyKey) else { continue }
+      guard let color = NSUnarchiver.unarchiveObject(with: legacyData) as? NSColor,
             let mpvColorString = color.usingColorSpace(.deviceRGB)?.mpvColorString else {
-        Logger.log("Failed to convert color value from legacy key \(legacyKey.rawValue)", level: .error)
+        Logger.log("Failed to convert color value from legacy pref \(legacyKey.rawValue)", level: .error)
         continue
       }
-      // Store migrated value in modern string format under modern pref key:
+      // Store string under modern pref key:
       Preference.set(mpvColorString, for: modernKey)
-      Logger.log("Converted color value from legacy key \(legacyKey.rawValue) and stored in key \(modernKey.rawValue)")
+      Logger.log("Converted color value from legacy pref \(legacyKey.rawValue) and stored in pref \(modernKey.rawValue)")
       entriesMigratedCount += 1
     }
-    Logger.log("Migrated \(entriesMigratedCount) of \(entriesFoundCount) legacy color pref entries")
-    Preference.set(true, for: .didMigrateColorFromNSArchiver)
+    if unmigratedEntriesFoundCount == 0 {
+      Logger.log("No unmigrated legacy color prefs found")
+    } else {
+      Logger.log("Migrated \(entriesMigratedCount) of \(unmigratedEntriesFoundCount) legacy color prefs")
+    }
   }
 
 }
