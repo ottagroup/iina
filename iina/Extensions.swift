@@ -397,7 +397,7 @@ extension FileHandle {
       return nil
     }
     return data.withUnsafeBytes {
-      $0.bindMemory(to: T.self).first!
+      $0.bindMemory(to: T.self).first
     }
   }
 }
