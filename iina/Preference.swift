@@ -169,6 +169,11 @@ struct Preference {
     static let enableInitialVolume = Key("enableInitialVolume")
     static let initialVolume = Key("initialVolume")
 
+    static let replayGain = Key("replayGain")
+    static let replayGainPreamp = Key("replayGainPreamp")
+    static let replayGainClip = Key("replayGainClip")
+    static let replayGainFallback = Key("replayGainFallback")
+
     // Subtitle
 
     static let subAutoLoadIINA = Key("subAutoLoadIINA")
@@ -705,6 +710,28 @@ struct Preference {
 
   }
 
+  enum ReplayGainOption: Int, InitializingFromKey {
+    case no = 0
+    case track
+    case album
+
+    static var defaultValue = ReplayGainOption.no
+
+    init?(key: Key) {
+      self.init(rawValue: Preference.integer(for: key))
+    }
+
+    var mpvString: String {
+      get {
+        switch self {
+        case .no: return "no"
+        case .track : return "track"
+        case .album: return "album"
+        }
+      }
+    }
+  }
+
   // MARK: - Defaults
 
   static let defaultPreference: [Preference.Key: Any] = [
@@ -789,6 +816,10 @@ struct Preference {
     .audioDeviceDesc: "Autoselect device",
     .enableInitialVolume: false,
     .initialVolume: 100,
+    .replayGain: ReplayGainOption.no.rawValue,
+    .replayGainPreamp: 0,
+    .replayGainClip: false,
+    .replayGainFallback: 0,
 
     .subAutoLoadIINA: IINAAutoLoadAction.iina.rawValue,
     .subAutoLoadPriorityString: "",

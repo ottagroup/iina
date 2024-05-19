@@ -312,6 +312,14 @@ not applying FFmpeg 9599 workaround
 
     setUserOption(PK.audioDevice, type: .string, forName: MPVOption.Audio.audioDevice)
 
+    setUserOption(PK.replayGain, type: .other, forName: MPVOption.Audio.replaygain) { key in
+      let value = Preference.integer(for: key)
+      return Preference.ReplayGainOption(rawValue: value)?.mpvString ?? "no"
+    }
+    setUserOption(PK.replayGainPreamp, type: .float, forName: MPVOption.Audio.replaygainPreamp)
+    setUserOption(PK.replayGainClip, type: .bool, forName: MPVOption.Audio.replaygainClip)
+    setUserOption(PK.replayGainFallback, type: .float, forName: MPVOption.Audio.replaygainFallback)
+
     // - Sub
 
     chkErr(mpv_set_option_string(mpv, MPVOption.Subtitles.subAuto, "no"))
